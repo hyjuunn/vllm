@@ -256,6 +256,19 @@ def _triton_gemm_config_is_tuned(config_name: str, N: int, K: int) -> bool:
     return get_gemm_config(config_name, M_TUNE_PROBE, N, K)[1]
 
 
+def _triton_gemm_config_exists(config_name: str, N: int, K: int) -> bool:
+    from aiter.ops.triton.utils.gemm_config_utils import get_gemm_config
+
+    # AITER's M bounds are powers of two. Probing just past each one finds a
+    # config without "any" whose M_LEQ and M_GEQ buckets leave a gap.
+    try:
+        for M in (1, *((1 << i) + 1 for i in range(16)), 1 << 16):
+            get_gemm_config(config_name, M, N, K)
+    except (AssertionError, KeyError):
+        return False
+    return True
+
+
 def _ck_gemm_shape_is_tuned(
     N: int, K: int, q_dtype_w: torch.dtype, csv_attr: str
 ) -> bool:
@@ -3858,9 +3871,20 @@ class rocm_aiter_ops:
         if _aiter_w8a8_uses_triton():
             try:
                 return _triton_gemm_config_is_tuned("GEMM-A8W8", N, K)
-            except (AssertionError, ImportError):
+            except (AssertionError, ImportError, KeyError):
                 return False
         return _ck_gemm_shape_is_tuned(N, K, q_dtype_w, "AITER_CONFIG_GEMM_A8W8_FILE")
+
+    @staticmethod
+    @functools.cache
+    def has_per_token_w8a8_gemm_config(N: int, K: int) -> bool:
+        """Check for an AITER Triton W8A8 configuration."""
+        if not _aiter_w8a8_uses_triton():
+            return False
+        try:
+            return _triton_gemm_config_exists("GEMM-A8W8", N, K)
+        except ImportError:
+            return False
 
     @staticmethod
     def shuffle_weight(
