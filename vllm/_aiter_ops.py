@@ -237,6 +237,15 @@ def is_aiter_found_and_supported_on_rdna4() -> bool:
     return False
 
 
+def is_aiter_found_and_supported_on_gfx1100() -> bool:
+    """Check whether AITER is available on gfx1100."""
+    if current_platform.is_rocm() and IS_AITER_FOUND:
+        from vllm.platforms.rocm import on_gfx1100
+
+        return on_gfx1100()
+    return False
+
+
 def _aiter_w8a8_uses_triton() -> bool:
     # RDNA uses Triton because AITER's CK W8A8 GEMM is unavailable.
     # Keep CK on CDNA to preserve per-tensor INT8 support.
@@ -2166,6 +2175,15 @@ class rocm_aiter_ops:
         return cls.is_rdna_aiter_enabled() and cls._LINEAR_ENABLED
 
     @classmethod
+    def is_gfx1100_per_token_linear_enabled(cls) -> bool:
+        """Check whether AITER per-token FP8 linear is enabled on gfx1100."""
+        return (
+            is_aiter_found_and_supported_on_gfx1100()
+            and cls._AITER_ENABLED
+            and cls._LINEAR_ENABLED
+        )
+
+    @classmethod
     @if_aiter_supported
     def is_linear_enabled(cls) -> bool:
         return cls._AITER_ENABLED and cls._LINEAR_ENABLED
@@ -2695,6 +2713,13 @@ class rocm_aiter_ops:
                     fake_impl=rocm_aiter_sparse_attn_indexer_fake,
                     dispatch_key=current_platform.dispatch_key,
                 )
+                # Register W8A8 GEMM without enabling the full AITER op set.
+                if is_aiter_found_and_supported_on_gfx1100():
+                    direct_register_custom_op(
+                        op_name="rocm_aiter_w8a8_gemm",
+                        op_func=_rocm_aiter_w8a8_gemm_impl,
+                        fake_impl=_rocm_aiter_w8a8_gemm_fake,
+                    )
                 _OPS_REGISTERED = True
             return
 

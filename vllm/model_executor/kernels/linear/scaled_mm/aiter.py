@@ -334,7 +334,10 @@ class AiterPerTokenFp8ScaledMMLinearKernel(FP8ScaledMMLinearKernel):
     def is_supported(
         cls, compute_capability: int | None = None
     ) -> tuple[bool, str | None]:
-        if rocm_aiter_ops.is_rdna_linear_enabled():
+        if (
+            rocm_aiter_ops.is_rdna_linear_enabled()
+            or rocm_aiter_ops.is_gfx1100_per_token_linear_enabled()
+        ):
             return True, None
         return AiterPreshuffledPerTokenFp8ScaledMMLinearKernel.is_supported(
             compute_capability
