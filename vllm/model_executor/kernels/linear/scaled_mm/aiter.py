@@ -34,14 +34,6 @@ from .ScaledMMLinearKernel import (
 logger = init_logger(__name__)
 
 
-def _on_gfx1100() -> bool:
-    if not current_platform.is_rocm():
-        return False
-    from vllm.platforms.rocm import on_gfx1100
-
-    return on_gfx1100()
-
-
 class AiterInt8ScaledMMLinearKernel(CutlassInt8ScaledMMLinearKernel):
     @classmethod
     def is_supported(
@@ -362,19 +354,19 @@ class AiterPerTokenFp8ScaledMMLinearKernel(FP8ScaledMMLinearKernel):
                 False,
                 "requires per token activation scales and per channel weight scales.",
             )
-        # Aiter's per-token Gemm performs better than torch only when its
-        # tuned. gfx1100 has no other FP8 linear kernel, so there AITER's
-        # default config is accepted for untuned shapes.
-        tuned = rocm_aiter_ops.is_per_token_w8a8_gemm_tuned(N, K, fp8_dtype)
-        if not tuned and not (
-            _on_gfx1100() and rocm_aiter_ops.has_per_token_w8a8_gemm_config(N, K)
-        ):
-            return (
-                False,
-                f"requires a tuned configuration for N: {N} and K: {K} "
-                f"and fp8 dtype {fp8_dtype}.",
-            )
-        return True, None
+        # Use tuned configs where available. On gfx1100, also accept the
+        # default config since no alternative FP8 linear kernel is available.
+        if rocm_aiter_ops.is_per_token_w8a8_gemm_tuned(N, K, fp8_dtype):
+            return True, None
+        if rocm_aiter_ops.is_gfx1100_per_token_linear_enabled():
+            if rocm_aiter_ops.has_per_token_w8a8_gemm_config(N, K):
+                return True, None
+            return False, f"requires an AITER GEMM-A8W8 config for N: {N} and K: {K}."
+        return (
+            False,
+            f"requires a tuned configuration for N: {N} and K: {K} "
+            f"and fp8 dtype {fp8_dtype}.",
+        )
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
         w_name, *_ = self.layer_param_names
