@@ -238,10 +238,12 @@ def is_aiter_found_and_supported_on_rdna4() -> bool:
 
 
 def _aiter_w8a8_uses_triton() -> bool:
+    # RDNA uses Triton because AITER's CK W8A8 GEMM is unavailable.
+    # Keep CK on CDNA to preserve per-tensor INT8 support.
     if current_platform.is_rocm() and IS_AITER_FOUND:
-        from vllm.platforms.rocm import on_rdna4
+        from vllm.platforms.rocm import on_rdna
 
-        return on_rdna4()
+        return on_rdna()
     return False
 
 
